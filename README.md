@@ -9,6 +9,21 @@ Summarize Youtube videos in the terminal fast and simple. Great results.
 python main.py "<video_url>"
 ```
 
+```
+usage: main.py [-h] [-t] [-a AI_PROVIDER] [-v] youtube_url
+
+positional arguments:
+  youtube_url           youtube url
+
+options:
+  -h, --help            show this help message and exit
+  -t, --transcript-only
+                        transcript only, no summary (default: False)
+  -a AI_PROVIDER, --ai_provider AI_PROVIDER
+                        AI provider: openai,gemini,private_endpoint (default: gemini)
+  -v                    verbose (default: False)
+```
+
 ## Install
 
 ```bash
