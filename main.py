@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 OUT_DIR = Path(__file__).parent / "out_files"
+OUT_DIR.mkdir(exist_ok=True)
 logger.info(f"OUT_DIR: {OUT_DIR}")
 
 
@@ -303,8 +304,9 @@ if __name__ == "__main__":
         video_str += f"\n{chapters_str}"
 
     print(video_str)
-    transcript = get_transcript(vi)
 
+    # transcript
+    transcript = get_transcript(vi)
     if transcript:
         vi.transcript = transcript
         t_print = f"\n\n{transcript}"
