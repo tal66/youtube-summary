@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import sys
 import urllib.parse as urlparse
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 OUT_DIR = Path(__file__).parent / "out_files"
 logger.info(f"OUT_DIR: {OUT_DIR}")
+
 
 ########### transcript
 
@@ -32,10 +34,10 @@ def get_transcript(vi: "VideoInfo") -> str:
         return transcript
 
     subs_options = _get_subs_options(vi)
-    subs_ext_dict = {item['ext']: item['url'] for item in subs_options}
+    subs_ext_dict = {item["ext"]: item["url"] for item in subs_options}
 
-    if 'vtt' in subs_ext_dict:
-        subs_url = subs_ext_dict['vtt']
+    if "vtt" in subs_ext_dict:
+        subs_url = subs_ext_dict["vtt"]
         response = requests.get(subs_url)
         if response.status_code == 200:
             vtt_data = response.text
@@ -62,9 +64,9 @@ def _format_hhmmss(seconds):
 def to_chapters_str(chapters) -> str:
     chapter_str = ""
     for chapter in chapters:
-        start_time = chapter['start_time']
+        start_time = chapter["start_time"]
         start_time_f = _format_hhmmss(start_time)
-        title = chapter['title']
+        title = chapter["title"]
         chapter_str += f"{start_time_f} {title}\n"
     return chapter_str
 
@@ -94,7 +96,7 @@ def _get_transcript_from_vtt(vtt_data):
 def _get_subs_options(vi: "VideoInfo") -> list[dict]:
     if not vi.language:
         logger.warning("no language found. set default languages.")
-        languages = ['iw', 'en', 'en-US', 'en-GB']
+        languages = ["iw", "en", "en-US", "en-GB"]
     else:
         languages = [vi.language]
 
@@ -102,17 +104,17 @@ def _get_subs_options(vi: "VideoInfo") -> list[dict]:
         languages.append("en")
 
     for language in languages:
-        orig_lang = f'{language}-orig'  # happens
+        orig_lang = f"{language}-orig"  # happens
 
         if language in vi.subtitles_d:
-            logger.info(f"\nsubtitles in: {language}\n")
+            logger.info(f"subtitles in: {language}")
             return vi.subtitles_d[language]
         else:
             if language in vi.automatic_captions_d:
-                logger.info(f"\nautomatic_captions in: {language}\n")
+                logger.info(f"automatic_captions in: {language}")
                 return vi.automatic_captions_d[language]
             elif orig_lang in vi.automatic_captions_d:
-                logger.info(f"\nautomatic_captions in: {orig_lang}\n")
+                logger.info(f"automatic_captions in: {orig_lang}")
                 return vi.automatic_captions_d[orig_lang]
             else:
                 logger.warning(f"no subtitles found (language: {language}).")
@@ -122,47 +124,46 @@ def _get_subs_options(vi: "VideoInfo") -> list[dict]:
 
 ########### models
 
-DEFAULT_PROMPT_PREFIX = ("Summarize this video transcript. "
-                         "Break into sections and include main ideas from each section."
-                         "Add executive summary: what is the purpose of the video? what are the main takeaways?")
+DEFAULT_PROMPT_PREFIX = (
+    "Summarize this video transcript. "
+    "Break into sections and include main ideas from each section."
+    "Add executive summary: what is the purpose of the video? what are the main takeaways?"
+)
+DEFAULT_PROMPT_PREFIX_OPENAI = (
+    "Summarize this video transcript. "
+    "Break into sections and include main ideas from each section. Elaborate. "
+    "Add executive summary: what is the purpose of the video and main takeaways?"
+)
 
 
-def ask_openai(video_str, prompt_prefix=None) -> str:
+def ask_openai(video_str, prompt_prefix=DEFAULT_PROMPT_PREFIX_OPENAI) -> str:
     logger.info("get openai summary..")
     from openai import OpenAI
-    if not os.getenv('OPENAI_API_KEY'):
+
+    if not os.getenv("OPENAI_API_KEY"):
         logger.error("OPENAI_API_KEY is not set")
         return ""
 
     client = OpenAI()
-
-    if not prompt_prefix:
-        prompt_prefix = DEFAULT_PROMPT_PREFIX
     prompt = f"{prompt_prefix}\n\n{video_str}"
 
     # get
-    completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        store=True,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
+    completion = client.chat.completions.create(model="gpt-3.5-turbo", store=True,
+                                                messages=[{"role": "user", "content": prompt}])
 
     msg = completion.choices[0].message
     msg_content = msg.content
 
     usage = completion.usage
-    logger.info(
-        f"prompt_tokens: {usage.prompt_tokens}, completion_tokens: {usage.completion_tokens}")
+    logger.info(f"prompt_tokens: {usage.prompt_tokens}, completion_tokens: {usage.completion_tokens}")
     return msg_content
 
 
-def ask_gemini(video_str, prompt_prefix=None) -> str:
+def ask_gemini(video_str, prompt_prefix=DEFAULT_PROMPT_PREFIX) -> str:
     logger.info("get gemini summary..")
     from google import genai
 
-    key = os.getenv('GEMINI_KEY')
+    key = os.getenv("GEMINI_KEY")
     if not key:
         logger.error("GEMINI_KEY is not set")
         return ""
@@ -170,24 +171,26 @@ def ask_gemini(video_str, prompt_prefix=None) -> str:
     client = genai.Client(api_key=key)
 
     # prompt
-    if not prompt_prefix:
-        prompt_prefix = DEFAULT_PROMPT_PREFIX
     prompt = f"{prompt_prefix}\n\n{video_str}"
 
     # get
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
 
     return response.text
 
 
+def ask_private_endpoint(video_str, prompt_prefix=DEFAULT_PROMPT_PREFIX) -> str:
+    # TODO
+    endpoint = ""
+    return ""
+
+
 # for simplicity not using interfaces
-AI_FUNC_DICT = {"openai": ask_openai, "gemini": ask_gemini}
+AI_FUNC_DICT = {"openai": ask_openai, "gemini": ask_gemini, "private_endpoint": ask_private_endpoint}
 
 
 #################
+
 
 @dataclass
 class VideoInfo:
@@ -201,6 +204,24 @@ class VideoInfo:
     language: str = ""
     subtitles_d: dict = None
     automatic_captions_d: dict = None
+    transcript: str = ""
+
+    @classmethod
+    def new(cls, yt_info_dict):
+        upload_date = yt_info_dict.get("upload_date", "")
+        vi = VideoInfo(
+            title=yt_info_dict.get("title", ""),
+            video_id=yt_info_dict.get("id", ""),
+            channel=yt_info_dict.get("uploader", ""),
+            duration=yt_info_dict.get("duration", 0),
+            duration_string=yt_info_dict.get("duration_string", ""),
+            chapters=yt_info_dict.get("chapters", []),
+            upload_date=f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}",
+            language=yt_info_dict.get("language", ""),
+            subtitles_d=yt_info_dict.get("subtitles", {}),
+            automatic_captions_d=yt_info_dict.get("automatic_captions", {}),
+        )
+        return vi
 
 
 def get_summary(ai_provider: str, vi: VideoInfo) -> str:
@@ -208,14 +229,22 @@ def get_summary(ai_provider: str, vi: VideoInfo) -> str:
         logger.error(f"AI provider not found: {ai_provider}. options: {AI_FUNC_DICT.keys()}")
         return ""
 
+    if len(vi.transcript) > 100_000:
+        # ask user
+        ans = input(f"transcript is very long ({len(vi.transcript)}). continue? [y]/n: ")
+        ans = ans.strip()
+        if ans and (ans.lower() != "y"):
+            print("abort")
+            return ""
+
     # get
     func = AI_FUNC_DICT.get(ai_provider)
-    ai_result = func(transcript)
+    ai_result = func(vi.transcript)
 
     # save
-    title_sanitized = re.sub(r'[^\w\s\-\(\)\[\]]', '_', vi.title)
-    f = f"{OUT_DIR}/{vi.video_id}__{vi.channel[:30]}_{title_sanitized[:40]}.md"
-    Path(f).write_text(f"## {vi.title} ({vi.channel})\n\n{ai_result}")
+    title_sanitized = re.sub(r"[^\w\s\-\(\)\[\]]", "_", vi.title)
+    f = f"{OUT_DIR}/{vi.video_id}__{vi.channel[:30]}_{title_sanitized[:40]}.{ai_provider}.md"
+    Path(f).write_text(f"## {vi.title}\n## {vi.channel}\n\n{ai_result}")
 
     logger.info(f"summary saved to {f}")
     return ai_result
@@ -223,58 +252,69 @@ def get_summary(ai_provider: str, vi: VideoInfo) -> str:
 
 ########### out
 
+
 def highlight_bold(text):
     RESET = "\033[0m"
-    UNDERLINE = '\033[4m'
+    UNDERLINE = "\033[4m"
     return re.sub(r"\*\*(.*?)\*\*", rf"{UNDERLINE}\1{RESET}", text)
 
 
-if __name__ == "__main__":
-    import sys
-    youtube_url = sys.argv[1] if len(sys.argv) > 1 else ""
+###########
 
-    if not youtube_url.startswith("https://www.youtube.com"):
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Get video summary",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("youtube_url", type=str, help="youtube url")
+    parser.add_argument("-t", "--transcript-only", action="store_true", help="transcript only, no summary")
+    parser.add_argument("-a", "--ai_provider", type=str, default="gemini",
+                        help=f"AI provider: {",".join(AI_FUNC_DICT.keys())}")
+    parser.add_argument("-v", action="store_true", help="verbose")
+    # maybe in the future
+    # parser.add_argument("-o", ...)
+    args = parser.parse_args()
+
+    youtube_url = args.youtube_url
+
+    BASE_URL = "https://www.youtube.com"
+    if not youtube_url.startswith(BASE_URL):
         logger.error("invalid youtube url")
         sys.exit(1)
 
-    if not youtube_url.startswith("https://www.youtube.com/shorts"):
+    if args.v:
+        logger.setLevel(logging.INFO)
+
+    if not youtube_url.startswith(f"{BASE_URL}/shorts"):
         # keep just video id (avoid problems with extra params)
-        youtube_url_video_id = urlparse.parse_qs(urlparse.urlparse(youtube_url).query)['v'][0]
-        youtube_url = f"https://www.youtube.com/watch?v={youtube_url_video_id}"
+        youtube_url_video_id = urlparse.parse_qs(urlparse.urlparse(youtube_url).query)["v"][0]
+        youtube_url = f"{BASE_URL}/watch?v={youtube_url_video_id}"
 
     logger.info(f"youtube_url: {youtube_url}")
-    with YoutubeDL({'quiet': True, 'no_warnings': True, 'verbose': False}) as ydl:
+    with YoutubeDL({"quiet": True, "no_warnings": True, "verbose": False}) as ydl:
         yt_info_dict = ydl.extract_info(youtube_url, download=False)
 
     # video_info
-    upload_date = yt_info_dict.get('upload_date', '')
-    vi = VideoInfo(
-        title=yt_info_dict.get('title', ''),
-        video_id=yt_info_dict.get('id', ''),
-        channel=yt_info_dict.get('uploader', ''),
-        duration=yt_info_dict.get('duration', 0),
-        duration_string=yt_info_dict.get('duration_string', ''),
-        chapters=yt_info_dict.get('chapters', []),
-        upload_date=f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}",
-        language=yt_info_dict.get('language', ''),
-        subtitles_d=yt_info_dict.get('subtitles', {}),
-        automatic_captions_d=yt_info_dict.get('automatic_captions', {}),
-    )
-
+    vi = VideoInfo.new(yt_info_dict)
     video_str = f"\n{vi.title}\n{vi.channel} | duration {vi.duration_string} | {vi.upload_date}"
     logger.info(video_str)
-
     if vi.chapters:
         chapters_str = to_chapters_str(vi.chapters)
         video_str += f"\n{chapters_str}"
 
-    transcript = get_transcript(vi)
     print(video_str)
+    transcript = get_transcript(vi)
 
     if transcript:
-        video_str += f"\n\n{transcript}"
-        ai_result = get_summary("gemini", vi)
-        # ai_result =  get_summary("openai", vi)
+        vi.transcript = transcript
+        t_print = f"\n\n{transcript}"
 
-        colored_text = highlight_bold(ai_result)
-        print(f"\n\n{colored_text}\n")
+        if args.transcript_only:
+            print(t_print)
+        else:
+            video_str += t_print
+            provider = args.ai_provider
+            ai_result = get_summary(provider, vi)
+
+            colored_text = highlight_bold(ai_result)
+            print(f"\n\n{colored_text}\n")
