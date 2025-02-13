@@ -42,8 +42,11 @@ pip install google-genai openai
 
 Click to expand:
 
+<br>
+
 <details>
-<summary>Veritasium: The Most Important Algorithm Of All Time
+<summary>
+<strong>Veritasium: The Most Important Algorithm Of All Time</strong>
 </summary>
 
 ```
@@ -126,7 +129,8 @@ Click to expand:
 <br>
 
 <details>
-<summary>Lex Fridman: A day in my life
+<summary>
+<strong>Lex Fridman: A day in my life</strong>
 </summary>
     
 ```
@@ -225,7 +229,8 @@ Here's a summary of the video transcript, broken into sections with main ideas a
 <br>
 
 <details>
-<summary>Lex Fridman: A day in my life (gpt-4o)
+<summary>
+<strong>Lex Fridman: A day in my life (gpt-4o)</strong>
 </summary>
     
 ```
@@ -264,7 +269,8 @@ Overall, the video serves as both a motivational guide and a personal testimonia
 <br>
 
 <details>
-<summary>Fender: In Conversation with Tom DeLonge
+<summary> 
+<strong>Fender: In Conversation with Tom DeLonge</strong>
 </summary>
     
 ```
@@ -318,7 +324,9 @@ Here's a summary of the video transcript, broken into sections with main ideas, 
 
 </details>
 
-### Note
+
+
+## Note
 
 The purpose of this project is to provide a quick summary of the video content. This will never replace watching the video and absorbing the full context.
 
