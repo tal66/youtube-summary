@@ -36,6 +36,7 @@ def get_transcript(vi: "VideoInfo") -> str:
 
     subs_options = _get_subs_options(vi)
     subs_ext_dict = {item["ext"]: item["url"] for item in subs_options}
+    transcript = ""
 
     if "vtt" in subs_ext_dict:
         subs_url = subs_ext_dict["vtt"]
@@ -43,15 +44,19 @@ def get_transcript(vi: "VideoInfo") -> str:
         if response.status_code == 200:
             vtt_data = response.text
             transcript = _get_transcript_from_vtt(vtt_data)
-
-            # save
-            Path(result_transcript_fname).write_text(transcript)
-            logger.info(f"save transcript to {result_transcript_fname}")
-            return transcript
         else:
             logger.info(f"Error: {response.status_code}")
     else:
-        logger.info(f"No vtt subtitles found. write parser for other formats: {subs_ext_dict.keys()}")
+        logger.warning(f"No vtt subtitles found. write parser for other formats: {subs_ext_dict.keys()} or add more languages.")
+
+    # save
+    if transcript:
+        Path(result_transcript_fname).write_text(transcript)
+        logger.info(f"save transcript to {result_transcript_fname}")
+        return transcript
+    else:
+        logger.error("empty transcript")
+
     return ""
 
 
@@ -97,7 +102,7 @@ def _get_transcript_from_vtt(vtt_data):
 def _get_subs_options(vi: "VideoInfo") -> list[dict]:
     if not vi.language:
         logger.warning("no language found. set default languages.")
-        languages = ["iw", "en", "en-US", "en-GB"]
+        languages = ["iw", "en", "en-US"]
     else:
         languages = [vi.language]
 
@@ -117,9 +122,14 @@ def _get_subs_options(vi: "VideoInfo") -> list[dict]:
             elif orig_lang in vi.automatic_captions_d:
                 logger.info(f"automatic_captions in: {orig_lang}")
                 return vi.automatic_captions_d[orig_lang]
-            else:
-                logger.warning(f"no subtitles found (language: {language}).")
 
+    # try find any en-* subs
+    for lang, subs_list in vi.subtitles_d.items():
+        if lang.startswith("en-"):
+            logger.warning(f"using {lang} subtitles")
+            return subs_list
+
+    logger.warning(f"no subtitles found for languages: {languages}")
     return []
 
 
@@ -149,8 +159,9 @@ def ask_openai(video_str, prompt_prefix=DEFAULT_PROMPT_PREFIX_OPENAI) -> str:
     prompt = f"{prompt_prefix}\n\n{video_str}"
 
     # get
-    completion = client.chat.completions.create(model="gpt-3.5-turbo", store=True,
-                                                messages=[{"role": "user", "content": prompt}])
+    model = "gpt-3.5-turbo"
+    # model = "gpt-4o"
+    completion = client.chat.completions.create(model=model, store=True, messages=[{"role": "user", "content": prompt}])
 
     msg = completion.choices[0].message
     msg_content = msg.content
@@ -230,9 +241,9 @@ def get_summary(ai_provider: str, vi: VideoInfo) -> str:
         logger.error(f"AI provider not found: {ai_provider}. options: {AI_FUNC_DICT.keys()}")
         return ""
 
-    if len(vi.transcript) > 100_000:
+    if len(vi.transcript) > 200_000:
         # ask user
-        ans = input(f"transcript is very long ({len(vi.transcript)}). continue? [y]/n: ")
+        ans = input(f"transcript is very long ({len(vi.transcript)} chars). continue? [y]/n: ")
         ans = ans.strip()
         if ans and (ans.lower() != "y"):
             print("abort")
@@ -245,7 +256,7 @@ def get_summary(ai_provider: str, vi: VideoInfo) -> str:
     # save
     title_sanitized = re.sub(r"[^\w\s\-\(\)\[\]]", "_", vi.title)
     f = f"{OUT_DIR}/{vi.video_id}__{vi.channel[:30]}_{title_sanitized[:40]}.{ai_provider}.md"
-    Path(f).write_text(f"## {vi.title}\n## {vi.channel}\n\n{ai_result}")
+    Path(f).write_text(f"## {vi.title}\n## {vi.channel}\n{vi.upload_date}\n\n{ai_result}")
 
     logger.info(f"summary saved to {f}")
     return ai_result
@@ -254,9 +265,11 @@ def get_summary(ai_provider: str, vi: VideoInfo) -> str:
 ########### out
 
 
-def highlight_bold(text):
-    RESET = "\033[0m"
-    UNDERLINE = "\033[4m"
+RESET = "\033[0m"
+UNDERLINE = "\033[4m"
+
+
+def underline(text):
     return re.sub(r"\*\*(.*?)\*\*", rf"{UNDERLINE}\1{RESET}", text)
 
 
@@ -265,12 +278,10 @@ def highlight_bold(text):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Get video summary",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(description="Get video summary", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("youtube_url", type=str, help="youtube url")
     parser.add_argument("-t", "--transcript-only", action="store_true", help="transcript only, no summary")
-    parser.add_argument("-a", "--ai_provider", type=str, default="gemini",
-                        help=f"AI provider: {",".join(AI_FUNC_DICT.keys())}")
+    parser.add_argument("-a", "--ai_provider", type=str, default="gemini", help=f"AI provider: {','.join(AI_FUNC_DICT.keys())}")
     parser.add_argument("-v", action="store_true", help="verbose")
     # maybe in the future
     # parser.add_argument("-o", ...)
@@ -280,7 +291,7 @@ if __name__ == "__main__":
 
     BASE_URL = "https://www.youtube.com"
     if not youtube_url.startswith(BASE_URL):
-        logger.error("invalid youtube url")
+        logger.error(f"invalid youtube url. must start with: {BASE_URL}")
         sys.exit(1)
 
     if args.v:
@@ -288,8 +299,11 @@ if __name__ == "__main__":
 
     if not youtube_url.startswith(f"{BASE_URL}/shorts"):
         # keep just video id (avoid problems with extra params)
-        youtube_url_video_id = urlparse.parse_qs(urlparse.urlparse(youtube_url).query)["v"][0]
-        youtube_url = f"{BASE_URL}/watch?v={youtube_url_video_id}"
+        url_video_id = urlparse.parse_qs(urlparse.urlparse(youtube_url).query).get("v", [""])[0]
+        if not url_video_id:
+            logger.error(f"video id not found. must have 'v' param ({BASE_URL}/watch?v=...)")
+            sys.exit(1)
+        youtube_url = f"{BASE_URL}/watch?v={url_video_id}"
 
     logger.info(f"youtube_url: {youtube_url}")
     with YoutubeDL({"quiet": True, "no_warnings": True, "verbose": False}) as ydl:
@@ -318,5 +332,5 @@ if __name__ == "__main__":
             provider = args.ai_provider
             ai_result = get_summary(provider, vi)
 
-            colored_text = highlight_bold(ai_result)
-            print(f"\n\n{colored_text}\n")
+            formatted_text = underline(ai_result)
+            print(f"\n\n{formatted_text}\n")
